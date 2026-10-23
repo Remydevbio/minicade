@@ -1,0 +1,348 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Minigames</title>
+<meta name="description" content="A small collection of single-file browser games.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible:wght@400;700&family=Bagel+Fat+One&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #ebe8f7;
+    --card: #fbfaff;
+    --ink: #1e1840;
+    --muted: #5d567f;
+    --field: #fbfaff;
+    --tile-s: 78%;
+    --tile-l: 80%;
+    --shadow: var(--ink);
+    --display: "Bagel Fat One", "Arial Rounded MT Bold", system-ui, sans-serif;
+    --body: "Atkinson Hyperlegible", system-ui, -apple-system, "Segoe UI", sans-serif;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #17122b;
+      --card: #231c3f;
+      --ink: #f1eeff;
+      --muted: #aaa3cf;
+      --field: #231c3f;
+      --tile-s: 45%;
+      --tile-l: 34%;
+      --shadow: transparent; /* replaced per card by its own hue */
+    }
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--ink);
+    font: 400 1.0625rem/1.5 var(--body);
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .wrap {
+    width: min(1120px, 100% - 32px);
+    margin-inline: auto;
+    padding-block: 56px 80px;
+  }
+
+  header { margin-bottom: 40px; }
+
+  h1 {
+    margin: 0;
+    font: 400 clamp(3rem, 9vw, 6rem)/0.95 var(--display);
+    letter-spacing: -0.01em;
+  }
+
+  #status {
+    margin: 14px 0 0;
+    color: var(--muted);
+    min-height: 1.5em;
+  }
+
+  .controls {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px;
+    margin-top: 28px;
+  }
+
+  .controls input,
+  .controls select {
+    font: inherit;
+    color: var(--ink);
+    background: var(--field);
+    border: 2px solid var(--ink);
+    border-radius: 10px;
+    padding: 10px 14px;
+    min-height: 46px;
+  }
+  .controls input { flex: 1 1 240px; max-width: 420px; }
+  .controls input::placeholder { color: var(--muted); }
+
+  :focus-visible {
+    outline: 3px solid var(--ink);
+    outline-offset: 3px;
+  }
+
+  .grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+    gap: 28px 24px;
+    list-style: none;
+    margin: 0;
+    padding: 0;
+  }
+
+  .game {
+    --c: hsl(var(--h) 70% 55%);
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    color: inherit;
+    text-decoration: none;
+    background: var(--card);
+    border: 2px solid var(--ink);
+    border-radius: 14px;
+    box-shadow: 6px 6px 0 var(--shadow);
+    overflow: hidden;
+    position: relative;
+    transition: transform 120ms ease, box-shadow 120ms ease;
+  }
+  @media (prefers-color-scheme: dark) {
+    .game { box-shadow: 6px 6px 0 var(--c); border-color: var(--c); }
+  }
+  .game:hover,
+  .game:focus-visible {
+    transform: translate(4px, 4px);
+    box-shadow: 2px 2px 0 var(--shadow);
+  }
+  @media (prefers-color-scheme: dark) {
+    .game:hover, .game:focus-visible { box-shadow: 2px 2px 0 var(--c); }
+  }
+  .game:active {
+    transform: translate(6px, 6px);
+    box-shadow: 0 0 0 var(--shadow);
+  }
+
+  .label {
+    display: grid;
+    place-items: center;
+    height: 132px;
+    background: hsl(var(--h) var(--tile-s) var(--tile-l));
+    border-bottom: 2px solid var(--ink);
+    font-size: 3.75rem;
+    line-height: 1;
+  }
+  @media (prefers-color-scheme: dark) {
+    .label { border-bottom-color: var(--c); }
+  }
+
+  .badge {
+    position: absolute;
+    top: 10px;
+    right: 10px;
+    padding: 2px 10px;
+    font-size: 0.875rem;
+    font-weight: 700;
+    color: #1e1840;
+    background: #ffe45e;
+    border: 2px solid #1e1840;
+    border-radius: 999px;
+  }
+
+  .info { padding: 16px 18px 18px; display: flex; flex-direction: column; gap: 6px; flex: 1; }
+
+  .info h2 {
+    margin: 0;
+    font: 400 1.5rem/1.15 var(--display);
+  }
+  .info p { margin: 0; }
+  .desc { color: var(--ink); }
+  .meta { margin-top: auto !important; padding-top: 8px; color: var(--muted); font-size: 0.9375rem; }
+
+  .message {
+    max-width: 52ch;
+    padding: 24px;
+    background: var(--card);
+    border: 2px dashed var(--ink);
+    border-radius: 14px;
+  }
+  .message p { margin: 0; }
+  .message p + p { margin-top: 8px; color: var(--muted); }
+  code {
+    font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+    font-size: 0.9em;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .game { transition: none; }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>Minigames</h1>
+    <p id="status" role="status">Loading games…</p>
+    <div class="controls" hidden>
+      <label class="visually-hidden" for="q" style="position:absolute;left:-9999px">Search games</label>
+      <input id="q" type="search" placeholder="Search games" autocomplete="off">
+      <label class="visually-hidden" for="sort" style="position:absolute;left:-9999px">Sort games</label>
+      <select id="sort">
+        <option value="new">Newest first</option>
+        <option value="az">A to Z</option>
+      </select>
+    </div>
+  </header>
+
+  <main>
+    <ul class="grid" id="grid"></ul>
+    <div id="message"></div>
+  </main>
+</div>
+
+<script>
+(function () {
+  var grid = document.getElementById('grid');
+  var status = document.getElementById('status');
+  var message = document.getElementById('message');
+  var controls = document.querySelector('.controls');
+  var q = document.getElementById('q');
+  var sort = document.getElementById('sort');
+  var games = [];
+
+  var DAY = 86400000;
+  var rtf = typeof Intl !== 'undefined' && Intl.RelativeTimeFormat
+    ? new Intl.RelativeTimeFormat('en', { numeric: 'auto' }) : null;
+
+  function hue(str) {
+    var h = 5381;
+    for (var i = 0; i < str.length; i++) h = ((h << 5) + h + str.charCodeAt(i)) >>> 0;
+    return h % 360;
+  }
+
+  function ago(iso) {
+    var days = Math.round((new Date(iso).getTime() - Date.now()) / DAY);
+    if (!rtf) return new Date(iso).toLocaleDateString();
+    if (days > -45) return rtf.format(days, 'day');
+    if (days > -540) return rtf.format(Math.round(days / 30), 'month');
+    return rtf.format(Math.round(days / 365), 'year');
+  }
+
+  function isNew(iso) {
+    return Date.now() - new Date(iso).getTime() < 14 * DAY;
+  }
+
+  function el(tag, cls, text) {
+    var node = document.createElement(tag);
+    if (cls) node.className = cls;
+    if (text != null) node.textContent = text;
+    return node;
+  }
+
+  function card(g) {
+    var li = el('li');
+    var a = el('a', 'game');
+    a.href = g.url;
+    a.style.setProperty('--h', hue(g.file));
+
+    var label = el('div', 'label', g.emoji);
+    label.setAttribute('aria-hidden', 'true');
+    a.appendChild(label);
+
+    if (isNew(g.updated)) a.appendChild(el('span', 'badge', 'New'));
+
+    var info = el('div', 'info');
+    info.appendChild(el('h2', null, g.title));
+    if (g.description) info.appendChild(el('p', 'desc', g.description));
+    info.appendChild(el('p', 'meta', 'Updated ' + ago(g.updated)));
+    a.appendChild(info);
+
+    li.appendChild(a);
+    return li;
+  }
+
+  function showMessage(lines) {
+    message.innerHTML = '';
+    if (!lines) return;
+    var box = el('div', 'message');
+    lines.forEach(function (l) {
+      var p = el('p');
+      if (typeof l === 'string') p.textContent = l;
+      else l(p);
+      box.appendChild(p);
+    });
+    message.appendChild(box);
+  }
+
+  function render() {
+    var term = q.value.trim().toLowerCase();
+    var list = games.filter(function (g) {
+      return !term || (g.title + ' ' + g.description).toLowerCase().indexOf(term) !== -1;
+    });
+    list.sort(function (a, b) {
+      return sort.value === 'az'
+        ? a.title.localeCompare(b.title)
+        : b.updated.localeCompare(a.updated);
+    });
+
+    grid.innerHTML = '';
+    list.forEach(function (g) { grid.appendChild(card(g)); });
+
+    if (term && !list.length) {
+      showMessage(['No game matches “' + q.value.trim() + '”.', 'Try a shorter word or clear the search.']);
+      status.textContent = '0 of ' + games.length + ' games';
+    } else {
+      showMessage(null);
+      status.textContent = term
+        ? list.length + ' of ' + games.length + ' games'
+        : games.length + (games.length === 1 ? ' game' : ' games');
+    }
+  }
+
+  fetch('games.json', { cache: 'no-cache' })
+    .then(function (r) {
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      return r.json();
+    })
+    .then(function (data) {
+      games = data;
+      if (!games.length) {
+        status.textContent = 'No games yet';
+        showMessage([
+          'The games folder is empty.',
+          function (p) {
+            p.append('Add an .html file to ');
+            p.appendChild(el('code', null, 'games/'));
+            p.append(' and push. It shows up here after the next deploy.');
+          }
+        ]);
+        return;
+      }
+      controls.hidden = false;
+      q.addEventListener('input', render);
+      sort.addEventListener('change', render);
+      render();
+    })
+    .catch(function (err) {
+      status.textContent = 'Games could not be loaded';
+      showMessage([
+        'games.json could not be loaded (' + err.message + ').',
+        function (p) {
+          p.append('If you opened this file straight from disk, run ');
+          p.appendChild(el('code', null, 'node scripts/build.js'));
+          p.append(' and serve the _site folder instead, for example with ');
+          p.appendChild(el('code', null, 'npx serve _site'));
+          p.append('.');
+        }
+      ]);
+    });
+})();
+</script>
+</body>
+</html>

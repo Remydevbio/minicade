@@ -1,0 +1,789 @@
+<!doctype html><html><head><meta charset=utf8><meta name=viewport content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Echo Descent</title>
+<meta name="description" content="Fall through a pitch-black cave, ping the walls to see, and dodge the lurkers that hear you.">
+<meta name="emoji" content="🦇">
+<meta name="claude:viewport-fit-sides" content="cover">
+<meta name="theme-color" content="#070b17">
+<style>:root{color-scheme:light;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}html{scroll-padding-top:env(safe-area-inset-top,0px)}body{margin:0;padding:0;font:14px -apple-system,BlinkMacSystemFont,sans-serif;background:#fff;color:#000}img{max-width:100%}[hidden]:not([hidden=until-found i]){display:none!important}</style></head><body>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=Unbounded:wght@600;800&display=swap">
+<style>
+/* Layout: full-bleed sonar canvas, HUD pinned to the top edge, menu and result cards sit low inside thumb reach. Single dark look by choice. */
+:root{
+  --bg:#070b17; --bg-deep:#0d152c; --fg:#e4ecff; --muted:#8c9bbd;
+  --ping:#8fd3ff; --alarm:#ff7090; --line:rgba(143,211,255,.24); --panel:rgba(8,13,28,.84);
+  --f-display:'Unbounded','Arial Black',system-ui,sans-serif;
+  --f-mono:'IBM Plex Mono',ui-monospace,Menlo,Consolas,monospace;
+  color-scheme:dark;
+}
+html,body{height:100%}
+body{
+  margin:0; box-sizing:border-box; background:var(--bg); color:var(--fg);
+  font:400 14px/1.45 var(--f-mono); overflow:hidden; touch-action:none; overscroll-behavior:none;
+  -webkit-user-select:none; user-select:none; -webkit-tap-highlight-color:transparent;
+  padding-block:0;
+  padding-left:max(16px,env(safe-area-inset-left,0px));
+  padding-right:max(16px,env(safe-area-inset-right,0px));
+}
+#c{position:fixed; inset:0; width:100%; height:100%; display:block; touch-action:none}
+#ui{position:relative; height:100%; width:100%; max-width:var(--col,100%); margin-inline:auto; pointer-events:none}
+
+button{font:inherit; color:inherit; pointer-events:auto; cursor:pointer; -webkit-appearance:none; appearance:none}
+.go{display:block; width:100%; min-height:56px; border:0; border-radius:14px; background:var(--ping); color:#04101c;
+  font:800 14px/1 var(--f-display); letter-spacing:.14em; text-transform:uppercase}
+.go:active{transform:scale(.985)}
+.go:focus-visible,.snd:focus-visible{outline:2px solid var(--fg); outline-offset:3px}
+.snd{background:none; border:1px solid var(--line); border-radius:999px; padding:9px 13px; min-height:36px;
+  color:var(--muted); font:500 10px/1 var(--f-mono); letter-spacing:.16em; text-transform:uppercase}
+
+/* HUD */
+.hud{display:flex; justify-content:space-between; align-items:flex-start; gap:12px; padding-top:14px}
+.depth{display:flex; align-items:baseline}
+.depth b{font:800 38px/1 var(--f-display); letter-spacing:-.02em; font-variant-numeric:tabular-nums}
+.depth span{margin-left:5px; color:var(--muted); font:500 13px var(--f-mono)}
+.gauges{display:grid; gap:9px; justify-items:end}
+.gauge{display:flex; align-items:center; gap:10px}
+.gauge>span{font:500 10px/1 var(--f-mono); letter-spacing:.16em; text-transform:uppercase; color:var(--muted)}
+.pips{display:flex; gap:6px}
+.pips i{width:16px; height:16px; box-sizing:border-box; border-radius:50%; border:2px solid var(--ping);
+  background:conic-gradient(var(--ping) calc(var(--p,0)*360deg), transparent 0)}
+.bars{display:flex; gap:5px}
+.bars i{width:18px; height:6px; border-radius:2px;
+  background:linear-gradient(90deg,var(--alarm) calc(var(--p,0)*100%), rgba(255,112,144,.22) 0)}
+
+.banner{position:absolute; left:0; top:84px; opacity:0; transition:opacity .7s ease; pointer-events:none}
+.banner.show{opacity:1}
+.banner b{display:block; font:600 12px/1.2 var(--f-display); letter-spacing:.22em; text-transform:uppercase}
+.banner span{display:block; margin-top:5px; max-width:27ch; color:var(--muted); font-size:12px}
+
+/* Sheets */
+.sheet{position:absolute; inset:0; display:flex; flex-direction:column; justify-content:space-between; padding-block:18px; pointer-events:none}
+.mast{padding-top:max(7vh,24px)}
+.kicker{margin:0 0 14px; color:var(--ping); font:500 11px/1 var(--f-mono); letter-spacing:.24em; text-transform:uppercase}
+h1{margin:0; font:800 clamp(40px,13.5vw,68px)/.92 var(--f-display); letter-spacing:-.03em; text-transform:uppercase}
+.dock{background:var(--panel); border:1px solid var(--line); border-radius:18px; padding:6px 16px 16px;
+  -webkit-backdrop-filter:blur(8px); backdrop-filter:blur(8px); pointer-events:auto}
+.rules{margin:0 0 12px}
+.rules div{display:grid; grid-template-columns:54px 1fr; gap:10px; padding:9px 0; border-top:1px solid var(--line)}
+.rules div:first-child{border-top:0}
+.rules dt{color:var(--ping); font:500 10px/1.8 var(--f-mono); letter-spacing:.16em; text-transform:uppercase}
+.rules dd{margin:0; font-size:13px; min-width:0}
+.foot{display:flex; justify-content:space-between; align-items:center; gap:12px; margin-top:12px; color:var(--muted); font-size:12px}
+.foot b{color:var(--fg); font-weight:500}
+.big{display:flex; align-items:baseline}
+.big b{font:800 clamp(64px,22vw,104px)/.9 var(--f-display); letter-spacing:-.04em; font-variant-numeric:tabular-nums}
+.big span{margin-left:8px; color:var(--muted); font:500 16px var(--f-mono)}
+.best{margin:12px 0 0; color:var(--muted); font-size:13px}
+.best b{color:var(--ping); font-weight:500}
+.pt{margin:10px 0 12px; font:600 12px/1 var(--f-display); letter-spacing:.22em; text-transform:uppercase}
+[hidden]{display:none!important}
+@media (prefers-reduced-motion:reduce){.banner{transition:none}}
+</style>
+
+<canvas id="c"></canvas>
+<div id="ui">
+  <header class="hud" id="hud" hidden>
+    <div class="depth"><b id="depthNum">0</b><span>m</span></div>
+    <div class="gauges">
+      <div class="gauge"><span>Echo</span><div class="pips" id="pips"><i></i><i></i><i></i></div></div>
+      <div class="gauge"><span>Hull</span><div class="bars" id="bars"><i></i><i></i><i></i></div></div>
+      <button class="snd" id="sndHud" type="button">Sound on</button>
+    </div>
+  </header>
+
+  <div class="banner" id="banner"><b id="bannerName"></b><span id="bannerNote"></span></div>
+
+  <section class="sheet" id="menu">
+    <div class="mast">
+      <p class="kicker">Sonar descent</p>
+      <h1>Echo<br>Descent</h1>
+    </div>
+    <div class="dock">
+      <dl class="rules">
+        <div><dt>Drag</dt><dd>Steer sideways. You never stop falling.</dd></div>
+        <div><dt>Tap</dt><dd>Send a ping. Walls glow for about a second.</dd></div>
+        <div><dt>Heard</dt><dd>Lurkers rush to where you pinged, not to where you are. Ping, then move.</dd></div>
+        <div><dt>Orbs</dt><dd>Faint lights in the walls. Each one refills a ping.</dd></div>
+      </dl>
+      <button class="go" id="go" type="button">Descend</button>
+      <div class="foot"><span>Deepest <b id="bestMenu">0</b> m</span><button class="snd" id="sndMenu" type="button">Sound on</button></div>
+    </div>
+  </section>
+
+  <section class="sheet" id="over" hidden>
+    <div class="mast">
+      <p class="kicker" id="cause">Descent ended</p>
+      <div class="big"><b id="finalDepth">0</b><span>m</span></div>
+      <p class="best" id="bestLine"></p>
+    </div>
+    <div class="dock" style="padding-top:16px"><button class="go" id="again" type="button">Descend again</button></div>
+  </section>
+
+  <section class="sheet" id="pause" hidden>
+    <div></div>
+    <div class="dock"><p class="pt">Paused</p><button class="go" id="resume" type="button">Resume</button></div>
+  </section>
+</div>
+
+<script>
+(() => {
+'use strict';
+
+/* ---------- constants ---------- */
+const COLS = 15, CELL = 24, W = COLS * CELL;   // world is 360 units wide
+const M = 16;                                  // 16 units = 1 metre
+const Y0 = 200;                                // y where depth = 0
+const FADE = 1.4, PROX = 58, BAND = 30;
+const CORAL = 'rgb(255,112,144)';
+
+const BIOMES = [
+  { name:'Limestone', note:'Quiet rock. Learn the sound.',
+    wall:[150,196,255], ping:[143,211,255], bg1:[7,11,24],  bg2:[13,21,44],
+    fall:1,   follow:14,  maxVx:235, pspeed:560, pmax:250, pitch:1,   cspd:1,    cin:5 },
+  { name:'Ice', note:'Steering slides. Turn early.',
+    wall:[196,244,255], ping:[200,246,255], bg1:[5,16,28], bg2:[10,33,52],
+    fall:1,   follow:3.2, maxVx:270, pspeed:560, pmax:250, pitch:1.25, cspd:1,   cin:1.7 },
+  { name:'Flooded', note:'Sound crawls and the fall slows.',
+    wall:[96,224,204], ping:[120,236,216], bg1:[3,18,24],  bg2:[6,34,42],
+    fall:.8,  follow:8,   maxVx:210, pspeed:330, pmax:200, pitch:.7,  cspd:.72,  cin:3.2 },
+  { name:'Crystal', note:'Crystals echo your ping. Lurkers hear the echoes too.',
+    wall:[214,164,255], ping:[226,184,255], bg1:[15,8,30], bg2:[28,12,50],
+    fall:1,   follow:13,  maxVx:235, pspeed:560, pmax:250, pitch:1.5, cspd:1.05, cin:5 }
+];
+
+/* ---------- dom ---------- */
+const $ = id => document.getElementById(id);
+const canvas = $('c'), ctx = canvas.getContext('2d');
+const hud = $('hud'), depthNum = $('depthNum');
+const pipEls = [...$('pips').children], barEls = [...$('bars').children];
+const banner = $('banner'), bannerName = $('bannerName'), bannerNote = $('bannerNote');
+const menuEl = $('menu'), overEl = $('over'), pauseEl = $('pause');
+const reduce = !!(window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches);
+
+/* ---------- helpers ---------- */
+const clamp = (v, a, b) => v < a ? a : v > b ? b : v;
+const mix = (a, b, t) => [Math.round(a[0]+(b[0]-a[0])*t), Math.round(a[1]+(b[1]-a[1])*t), Math.round(a[2]+(b[2]-a[2])*t)];
+const rgb = c => 'rgb(' + c[0] + ',' + c[1] + ',' + c[2] + ')';
+const depthOf = y => Math.max(0, (y - Y0) / M);
+const biomeAt = dM => BIOMES[Math.floor(dM / 250) % 4];
+function palette(dM){
+  const i = Math.floor(dM / 250), t = clamp(((dM % 250) - 215) / 35, 0, 1);
+  const a = BIOMES[i % 4], b = BIOMES[(i + 1) % 4];
+  return { wall:mix(a.wall,b.wall,t), ping:mix(a.ping,b.ping,t), bg1:mix(a.bg1,b.bg1,t), bg2:mix(a.bg2,b.bg2,t) };
+}
+function vibrate(p){ try{ if(navigator.vibrate) navigator.vibrate(p); }catch(e){} }
+
+/* ---------- audio ---------- */
+let AC = null, master = null, noiseBuf = null, muted = false, lastGrowl = -9, lastEcho = -9;
+function audioInit(){
+  try{
+    if(!AC){
+      const C = window.AudioContext || window.webkitAudioContext; if(!C) return;
+      AC = new C(); master = AC.createGain(); master.gain.value = .9; master.connect(AC.destination);
+      noiseBuf = AC.createBuffer(1, Math.floor(AC.sampleRate * .3), AC.sampleRate);
+      const d = noiseBuf.getChannelData(0); for(let i=0;i<d.length;i++) d[i] = Math.random()*2-1;
+    }
+    if(AC.state === 'suspended') AC.resume();
+  }catch(e){}
+}
+const canPlay = () => AC && !muted && AC.state === 'running';
+function tone(f0, f1, dur, type, vol, delay, lp){
+  if(!canPlay()) return;
+  const t = AC.currentTime + (delay || 0), o = AC.createOscillator(), g = AC.createGain();
+  o.type = type;
+  o.frequency.setValueAtTime(f0, t); o.frequency.exponentialRampToValueAtTime(Math.max(20, f1), t + dur);
+  g.gain.setValueAtTime(.0001, t); g.gain.exponentialRampToValueAtTime(vol, t + .012); g.gain.exponentialRampToValueAtTime(.0001, t + dur);
+  if(lp){ const f = AC.createBiquadFilter(); f.type = 'lowpass'; f.frequency.value = lp; o.connect(f); f.connect(g); } else o.connect(g);
+  g.connect(master); o.start(t); o.stop(t + dur + .05);
+}
+function noise(vol, dur, lp){
+  if(!canPlay() || !noiseBuf) return;
+  const s = AC.createBufferSource(), f = AC.createBiquadFilter(), g = AC.createGain(), t = AC.currentTime;
+  s.buffer = noiseBuf; f.type = 'lowpass'; f.frequency.value = lp;
+  g.gain.setValueAtTime(vol, t); g.gain.exponentialRampToValueAtTime(.0001, t + dur);
+  s.connect(f); f.connect(g); g.connect(master); s.start(t); s.stop(t + dur);
+}
+const sfxPing  = p => { tone(1250*p, 430*p, .55, 'sine', .2); tone(920*p, 330*p, .8, 'sine', .07, .17); };
+const sfxEcho  = () => tone(2000, 900, .22, 'sine', .045);
+const sfxGrowl = v => tone(92, 48, .8, 'sawtooth', .10*v, 0, 260);
+const sfxThump = v => tone(70, 38, .22, 'sine', .35*v);
+const sfxHit   = () => { noise(.35, .25, 900); tone(170, 50, .3, 'square', .12, 0, 500); };
+const sfxOrb   = () => { tone(660, 1320, .18, 'triangle', .12); tone(990, 1980, .22, 'triangle', .08, .06); };
+const sfxDie   = () => { noise(.4, .6, 600); tone(120, 30, .9, 'sawtooth', .16, 0, 300); };
+
+/* ---------- state ---------- */
+let cw = 0, ch = 0, dpr = 1, S = 1, offX = 0, H = 640;
+let state = 'menu';            // menu | play | dead | paused
+let T = 0, rows = [], gen = null, player = null, pings = [], creatures = [], orbs = [], parts = [], trail = [], echoQ = [], dust = [];
+let energy = 3, pingId = 1, lastPingT = -9, shake = 0, flash = 0, autoT = 2, hb = 0, creatureId = 1;
+let lastBiome = 0, bannerTimer = 0, cause = '', newBest = false, deathTimer = 0;
+let best = 0;
+try{ best = +localStorage.getItem('echo-descent-best') || 0; }catch(e){}
+
+function resize(){
+  dpr = Math.min(window.devicePixelRatio || 1, 2);
+  cw = window.innerWidth; ch = window.innerHeight;
+  canvas.width = Math.round(cw * dpr); canvas.height = Math.round(ch * dpr);
+  const colW = Math.min(cw, ch * .62);
+  S = colW / W; offX = (cw - colW) / 2; H = ch / S;
+  document.documentElement.style.setProperty('--col', Math.round(colW) + 'px');
+}
+
+/* ---------- world generation ---------- */
+function ensureRows(n){ while(rows.length <= n) rows.push(genRow()); }
+function solidAt(c, r){
+  if(c < 0 || c >= COLS || r < 0) return true;
+  if(r >= rows.length) ensureRows(r);
+  return rows[r].solid[c] === 1;
+}
+function makeCreature(x, y){
+  return { id:creatureId++, x, y, vx:0, vy:0, r:10, state:'idle', alert:0, tx:x, ty:y, reached:false, heard:0,
+           lit:-99, ph:Math.random()*6.28, hdg:Math.PI/2, stun:0 };
+}
+function genRow(){
+  const r = rows.length;
+  const dM = Math.max(0, (r * CELL - Y0) / M);
+  const row = { solid:new Uint8Array(COLS), lit:new Float32Array(COLS).fill(-99), amp:new Float32Array(COLS),
+                crystal:new Uint8Array(COLS), echo:new Int32Array(COLS) };
+  let L, R;
+  if(r < 14){ L = 3; R = 11; gen.c = 7; }
+  else {
+    let w = 5.5 + 3.5 * Math.exp(-dM / 900) + Math.sin(r * .13) * .9;
+    if(gen.chamberLeft > 0){ w = 11.5; gen.chamberLeft--; }
+    else if(gen.squeezeLeft > 0){ w = 4; gen.squeezeLeft--; }
+    else if(r >= gen.nextEvent){
+      if(dM > 500 && Math.random() < .4) gen.squeezeLeft = 4 + ((Math.random() * 3) | 0);
+      else gen.chamberLeft = 8 + ((Math.random() * 5) | 0);
+      gen.nextEvent = r + 45 + ((Math.random() * 40) | 0);
+    }
+    w = clamp(w, 4, 12);
+    if(gen.pillarLeft <= 0){ gen.vc = gen.vc * .86 + (Math.random() - .5) * .55; gen.c += gen.vc; }
+    const wi = Math.round(w);
+    gen.c = clamp(gen.c, wi / 2 + .2, COLS - wi / 2 - .2);
+    L = Math.round(gen.c - wi / 2); R = L + wi - 1;
+    L = clamp(L, gen.lastL - 1, gen.lastL + 1); R = clamp(R, gen.lastR - 1, gen.lastR + 1);
+    L = clamp(L, 0, COLS - 1); R = clamp(R, 0, COLS - 1);
+    if(R - L + 1 < 4){ if(L + 3 <= COLS - 1) R = L + 3; else { R = COLS - 1; L = R - 3; } }
+  }
+  gen.lastL = L; gen.lastR = R;
+  for(let i = 0; i < COLS; i++) row.solid[i] = (i < L || i > R) ? 1 : 0;
+
+  // pillars: at least one gap of 3 cells always stays open
+  if(r >= 20){
+    if(gen.pillarLeft > 0){
+      gen.pillarLeft--;
+      const pl = Math.max(gen.pL, L + 1), pr = Math.min(gen.pR, R - 1);
+      if(pr >= pl && Math.max(pl - L, R - pr) >= 3){ for(let i = pl; i <= pr; i++) row.solid[i] = 1; }
+      else gen.pillarLeft = 0;
+      if(gen.pillarLeft === 0) gen.cool = 6 + (dM > 1500 ? 0 : 2);
+    } else if(gen.cool > 0){ gen.cool--; }
+    else {
+      const wide = R - L + 1;
+      const p = .06 + .09 * (1 - Math.exp(-dM / 700)) + (gen.chamberLeft > 0 ? .1 : 0);
+      if(wide >= 5 && Math.random() < p){
+        const pw = 1 + (Math.random() < .35 + Math.min(.3, dM / 4000) ? 1 : 0) + (gen.chamberLeft > 0 && Math.random() < .4 ? 1 : 0);
+        const both = [], single = [];
+        for(let pl = L + 1; pl + pw - 1 <= R - 1; pl++){
+          const left = pl - L, right = R - (pl + pw - 1);
+          if(left >= 3 && right >= 3) both.push(pl); else if(left >= 3 || right >= 3) single.push(pl);
+        }
+        const list = both.length ? both : single;
+        if(list.length){
+          const pl = list[(Math.random() * list.length) | 0];
+          gen.pL = pl; gen.pR = pl + pw - 1; gen.pillarLeft = 2 + ((Math.random() * 3) | 0);
+          for(let i = gen.pL; i <= gen.pR; i++) row.solid[i] = 1;
+        }
+      }
+    }
+  }
+
+  if(Math.floor(dM / 250) % 4 === 3){
+    for(let i = 0; i < COLS; i++){
+      if(row.solid[i] && (i === L - 1 || i === R + 1 || (i >= L && i <= R)) && Math.random() < .4) row.crystal[i] = 1;
+    }
+  }
+
+  const open = []; for(let i = 0; i < COLS; i++) if(!row.solid[i]) open.push(i);
+  if(r >= 45 && r - gen.lastSpawn >= 16){
+    let p = .02 + .022 * (1 - Math.exp(-dM / 900)); if(gen.chamberLeft > 0) p *= 2.5;
+    if(Math.random() < p){
+      const i = open[(Math.random() * open.length) | 0];
+      creatures.push(makeCreature((i + .5) * CELL, (r + .5) * CELL)); gen.lastSpawn = r;
+    }
+  }
+  if(r >= 18 && r - gen.lastOrb >= 14 && Math.random() < .06){
+    const i = Math.random() < .5 ? L : R;
+    orbs.push({ x:(i + .5) * CELL, y:(r + .5) * CELL, ph:Math.random() * 6.28, lit:-99 }); gen.lastOrb = r;
+  }
+  return row;
+}
+
+/* ---------- reset ---------- */
+function reset(){
+  rows = []; creatures = []; orbs = []; pings = []; parts = []; trail = []; echoQ = [];
+  gen = { c:7, vc:0, pillarLeft:0, pL:0, pR:0, cool:0, chamberLeft:0, squeezeLeft:0, nextEvent:60, lastL:3, lastR:11, lastSpawn:0, lastOrb:0 };
+  player = { x:W/2, y:Y0, vx:0, vy:0, r:8, tx:W/2, hull:3, regen:0, inv:0, cx:0, cy:0, depth:0 };
+  energy = 3; pingId = 1; T = 0; shake = 0; flash = 0; autoT = 2; hb = 0; lastBiome = 0; lastPingT = -9;
+  steerId = null; taps.clear();
+  ensureRows(Math.floor(player.y / CELL) + Math.ceil(H / CELL) + 14);
+  dust = [];
+  for(let i = 0; i < 40; i++) dust.push({ x:Math.random() * W, y:Math.random() * 1000, p:.3 + Math.random() * .5, r:.8 + Math.random() * 1.2 });
+}
+
+/* ---------- collision ---------- */
+function blockedCircle(x, y, rad){
+  const c0 = Math.floor((x - rad) / CELL), c1 = Math.floor((x + rad) / CELL);
+  const r0 = Math.floor((y - rad) / CELL), r1 = Math.floor((y + rad) / CELL);
+  for(let r = r0; r <= r1; r++) for(let c = c0; c <= c1; c++){
+    if(!solidAt(c, r)) continue;
+    const nx = clamp(x, c * CELL, c * CELL + CELL), ny = clamp(y, r * CELL, r * CELL + CELL);
+    const dx = x - nx, dy = y - ny;
+    if(dx * dx + dy * dy < rad * rad) return true;
+  }
+  return false;
+}
+
+/* ---------- pings ---------- */
+function addPing(x, y, echo){
+  const b = biomeAt(depthOf(player.y));
+  pings.push({ id:pingId++, x, y, r:0, speed:echo ? 420 : b.pspeed, max:echo ? 95 : b.pmax, echo });
+}
+function doPing(){
+  if(state !== 'play' || energy < 1 || T - lastPingT < .22) return;
+  energy -= 1; lastPingT = T;
+  addPing(player.x, player.y, false);
+  sfxPing(biomeAt(depthOf(player.y)).pitch); vibrate(8);
+}
+const bright = (lit, amp) => amp * Math.max(0, 1 - (T - lit) / FADE);
+
+function alertCreature(c, x, y){
+  const wasIdle = c.state !== 'alert';
+  c.state = 'alert'; c.alert = 4.5; c.tx = x; c.ty = y; c.reached = false;
+  if(wasIdle && T - lastGrowl > .5){
+    lastGrowl = T;
+    const d = Math.hypot(c.x - player.x, c.y - player.y);
+    sfxGrowl(clamp(1 - d / 420, .15, 1));
+  }
+}
+function updatePings(dt){
+  for(let k = pings.length - 1; k >= 0; k--){
+    const p = pings[k];
+    p.r += p.speed * dt;
+    const rin = Math.max(0, p.r - BAND);
+    const row0 = Math.max(0, Math.floor((p.y - p.r - CELL) / CELL)), row1 = Math.floor((p.y + p.r + CELL) / CELL);
+    if(state === 'play') ensureRows(row1 + 1);
+    for(let r = row0; r <= row1 && r < rows.length; r++){
+      const row = rows[r];
+      for(let c = 0; c < COLS; c++){
+        if(!row.solid[c]) continue;
+        const cx = (c + .5) * CELL, cy = (r + .5) * CELL, d = Math.hypot(cx - p.x, cy - p.y);
+        if(d > p.max || d > p.r + 6 || d < rin - 6) continue;
+        const cand = (p.echo ? .75 : 1) * (1 - .45 * d / p.max);
+        if(cand >= bright(row.lit[c], row.amp[c])){ row.lit[c] = T; row.amp[c] = cand; }
+        if(!p.echo && row.crystal[c] && row.echo[c] !== p.id){ row.echo[c] = p.id; echoQ.push({ t:T + .12, x:cx, y:cy }); }
+      }
+    }
+    for(const c of creatures){
+      const d = Math.hypot(c.x - p.x, c.y - p.y);
+      if(d <= p.r && d >= rin - 4 && d <= p.max) c.lit = T;
+      if(d <= p.r && d <= p.max && c.heard !== p.id){ c.heard = p.id; if(c.stun <= 0) alertCreature(c, p.x, p.y); }
+    }
+    for(const o of orbs){
+      const d = Math.hypot(o.x - p.x, o.y - p.y);
+      if(d <= p.r && d >= rin - 4 && d <= p.max) o.lit = T;
+    }
+    if(p.r > p.max + BAND) pings.splice(k, 1);
+  }
+  for(let i = echoQ.length - 1; i >= 0; i--){
+    if(T >= echoQ[i].t){
+      addPing(echoQ[i].x, echoQ[i].y, true);
+      if(T - lastEcho > .05){ lastEcho = T; sfxEcho(); }
+      echoQ.splice(i, 1);
+    }
+  }
+}
+
+/* ---------- creatures ---------- */
+function updateCreature(c, dt){
+  const dx = player.x - c.x, dy = player.y - c.y, d = Math.hypot(dx, dy);
+  const dM = depthOf(c.y), b = biomeAt(dM);
+  if(c.stun > 0) c.stun -= dt;
+  if(c.stun <= 0 && c.state !== 'alert' && d < 44 && state === 'play') alertCreature(c, player.x, player.y);
+  if(c.state === 'alert'){
+    c.alert -= dt;
+    if(d < 85){ c.tx = player.x; c.ty = player.y; c.reached = false; }
+    const tdx = c.tx - c.x, tdy = c.ty - c.y, td = Math.hypot(tdx, tdy) || 1;
+    let sp = (92 + 44 * Math.min(1, dM / 1400)) * b.cspd, ax, ay;
+    if(td < 10) c.reached = true;
+    if(!c.reached){ ax = tdx / td; ay = tdy / td; }
+    else { ax = Math.cos(c.hdg) * .4; ay = Math.sin(c.hdg) * .4; sp *= .5; }
+    const k = Math.min(1, b.cin * dt);
+    c.vx += (ax * sp - c.vx) * k; c.vy += (ay * sp - c.vy) * k;
+    if(c.alert <= 0) c.state = 'idle';
+  } else {
+    c.ph += dt;
+    const k = Math.min(1, dt * 2);
+    c.vx += (Math.cos(c.ph * .9 + c.id) * 18 - c.vx) * k;
+    c.vy += (Math.sin(c.ph * .7) * 11 - c.vy) * k;
+  }
+  let nx = c.x + c.vx * dt, ny = c.y + c.vy * dt, bx = false, by = false;
+  if(blockedCircle(nx, c.y, 9)){ c.vx *= -.2; nx = c.x; bx = true; }
+  if(blockedCircle(nx, ny, 9)){ c.vy *= -.2; ny = c.y; by = true; }
+  if(bx && by) c.vx += (Math.random() < .5 ? -1 : 1) * 40;
+  c.x = nx; c.y = ny;
+  if(Math.hypot(c.vx, c.vy) > 8) c.hdg = Math.atan2(c.vy, c.vx);
+}
+
+/* ---------- player ---------- */
+function burst(x, y, n, col){
+  for(let i = 0; i < n; i++){
+    const a = Math.random() * 6.283, s = 40 + Math.random() * 150;
+    parts.push({ x, y, vx:Math.cos(a) * s, vy:Math.sin(a) * s, life:.5 + Math.random() * .5, max:1, col });
+  }
+}
+function hurt(src){
+  if(player.inv > 0 || state !== 'play') return;
+  player.hull--; player.inv = 1.1; player.regen = 0; shake = .4; flash = .3;
+  sfxHit(); vibrate([40]); burst(player.x, player.y, 14, [255,112,144]);
+  cause = src === 'lurker' ? 'A lurker found you' : src === 'wall' ? 'You hit the wall' : 'You landed on rock';
+  if(player.hull <= 0) die();
+}
+function die(){
+  state = 'dead'; deathTimer = .75; shake = .7; flash = .45;
+  sfxDie(); vibrate([60, 40, 120]); burst(player.x, player.y, 40, [255,112,144]);
+  const d = Math.floor(player.depth);
+  newBest = d > best;
+  if(newBest){ best = d; try{ localStorage.setItem('echo-descent-best', String(best)); }catch(e){} }
+  steerId = null; taps.clear();
+}
+function movePlayer(dt){
+  const p = player;
+  p.cx -= dt; p.cy -= dt;
+  let nx = p.x + p.vx * dt;
+  if(blockedCircle(nx, p.y, p.r)){
+    if(p.cx <= 0 && Math.abs(p.vx) > 110) hurt('wall');
+    p.cx = .12; p.vx = 0; p.tx = p.x; nx = p.x;
+    if(steerId !== null){ sx = lastLx; spx = p.x; }
+  }
+  p.x = nx;
+  let ny = p.y + p.vy * dt;
+  if(blockedCircle(p.x, ny, p.r)){
+    if(p.cy <= 0 && p.vy > 70) hurt('rock');
+    p.cy = .12; p.vy = 0; ny = p.y;
+  }
+  p.y = ny;
+}
+
+/* ---------- update ---------- */
+function updateParticles(dt){
+  for(let i = parts.length - 1; i >= 0; i--){
+    const q = parts[i];
+    q.x += q.vx * dt; q.y += q.vy * dt; q.vx *= .96; q.vy *= .96; q.life -= dt;
+    if(q.life <= 0) parts.splice(i, 1);
+  }
+}
+function update(dt){
+  T += dt;
+  const p = player;
+  p.depth = depthOf(p.y);
+  const b = biomeAt(p.depth);
+  if(energy < 3) energy = Math.min(3, energy + dt / 3.2);
+  if(p.hull < 3){ p.regen += dt; if(p.regen >= 28){ p.hull++; p.regen = 0; } }
+  if(p.inv > 0) p.inv -= dt;
+  shake = Math.max(0, shake - dt * 1.6); flash = Math.max(0, flash - dt);
+
+  let want = 0; if(keys.left) want--; if(keys.right) want++;
+  if(want !== 0){ p.tx = clamp(p.x + want * 200, 8, W - 8); keyActive = true; }
+  else if(keyActive){ p.tx = p.x; keyActive = false; }
+
+  const des = clamp((p.tx - p.x) * 9, -b.maxVx, b.maxVx);
+  p.vx += (des - p.vx) * Math.min(1, b.follow * dt);
+  const vyT = (110 + 80 * (1 - Math.exp(-p.depth / 900))) * b.fall;
+  p.vy += (vyT - p.vy) * Math.min(1, 3 * dt);
+  movePlayer(dt);
+  ensureRows(Math.floor((p.y + H) / CELL) + 26);
+
+  trail.push({ x:p.x, y:p.y }); if(trail.length > 14) trail.shift();
+
+  let dmin = 1e9;
+  for(let i = creatures.length - 1; i >= 0; i--){
+    const c = creatures[i];
+    if(c.y < p.y - 650){ creatures.splice(i, 1); continue; }
+    if(c.y > p.y + 900) continue;
+    updateCreature(c, dt);
+    const d = Math.hypot(p.x - c.x, p.y - c.y);
+    if(c.state === 'alert' && d < dmin) dmin = d;
+    if(d < p.r + c.r && c.stun <= 0 && p.inv <= 0){
+      const nx = (p.x - c.x) / (d || 1), ny = (p.y - c.y) / (d || 1);
+      hurt('lurker');
+      p.vx += nx * 260; c.stun = 1.4; c.vx = -nx * 160; c.vy = -ny * 160; c.state = 'idle';
+    }
+  }
+  for(let i = orbs.length - 1; i >= 0; i--){
+    const o = orbs[i];
+    if(o.y < p.y - 650){ orbs.splice(i, 1); continue; }
+    if(Math.hypot(o.x - p.x, o.y - p.y) < p.r + 10){
+      energy = Math.min(3, energy + 1); sfxOrb(); vibrate(10);
+      burst(o.x, o.y, 12, palette(p.depth).ping); orbs.splice(i, 1);
+    }
+  }
+  if(dmin < 360){
+    hb -= dt;
+    if(hb <= 0){ const k = 1 - dmin / 360; sfxThump(.25 + .75 * k); hb = .9 - .55 * k; }
+  }
+  updatePings(dt); updateParticles(dt);
+
+  const bi = Math.floor(p.depth / 250);
+  if(bi !== lastBiome){ lastBiome = bi; showBanner(bi); }
+  updateHud();
+}
+function updateMenu(dt){
+  T += dt; autoT += dt;
+  if(autoT >= 2.6){ autoT = 0; addPing(player.x, player.y, false); }
+  updatePings(dt); updateParticles(dt);
+}
+function updateDead(dt){
+  T += dt; shake = Math.max(0, shake - dt * 1.6); flash = Math.max(0, flash - dt);
+  updatePings(dt); updateParticles(dt);
+  if(deathTimer > 0){
+    deathTimer -= dt;
+    if(deathTimer <= 0){
+      $('cause').textContent = cause || 'Descent ended';
+      $('finalDepth').textContent = Math.floor(player.depth);
+      $('bestLine').innerHTML = newBest ? '<b>New deepest dive.</b>' : 'Deepest <b>' + best + ' m</b>';
+      overEl.hidden = false;
+    }
+  }
+}
+
+/* ---------- hud ---------- */
+const cache = { d:-1, e:'', h:'' };
+function updateHud(){
+  const d = Math.floor(player.depth);
+  if(d !== cache.d){ cache.d = d; depthNum.textContent = d; }
+  const ev = pipEls.map((_, i) => clamp(energy - i, 0, 1).toFixed(2));
+  const ek = ev.join('|');
+  if(ek !== cache.e){ cache.e = ek; pipEls.forEach((el, i) => el.style.setProperty('--p', ev[i])); }
+  const hv = barEls.map((_, i) => (i < player.hull ? 1 : (i === player.hull && player.hull < 3 ? player.regen / 28 : 0)).toFixed(2));
+  const hk = hv.join('|');
+  if(hk !== cache.h){ cache.h = hk; barEls.forEach((el, i) => el.style.setProperty('--p', hv[i])); }
+}
+function showBanner(i){
+  const b = BIOMES[i % 4];
+  bannerName.textContent = (i > 0 ? (i * 250) + ' m · ' : '') + b.name;
+  bannerNote.textContent = b.note;
+  banner.classList.add('show');
+  clearTimeout(bannerTimer);
+  bannerTimer = setTimeout(() => banner.classList.remove('show'), 3400);
+}
+function setSound(on){
+  muted = !on;
+  const label = on ? 'Sound on' : 'Sound off';
+  $('sndHud').textContent = label; $('sndMenu').textContent = label;
+}
+
+/* ---------- drawing ---------- */
+function drawCreature(c){
+  let a = Math.max(0, 1 - (T - c.lit) / FADE);
+  const d = Math.hypot(c.x - player.x, c.y - player.y);
+  if(d < PROX) a = Math.max(a, (1 - d / PROX) * .7);
+  if(c.state === 'alert'){
+    const pulse = .5 + .5 * Math.sin(T * 9 + c.ph);
+    const gr = ctx.createRadialGradient(c.x, c.y, 2, c.x, c.y, 34);
+    gr.addColorStop(0, 'rgba(255,112,144,' + (.2 + .12 * pulse) + ')'); gr.addColorStop(1, 'rgba(255,112,144,0)');
+    ctx.globalAlpha = 1; ctx.fillStyle = gr; ctx.beginPath(); ctx.arc(c.x, c.y, 34, 0, 6.283); ctx.fill();
+    a = Math.max(a, .16);
+  }
+  if(a < .03) return;
+  ctx.save(); ctx.translate(c.x, c.y); ctx.rotate(c.hdg);
+  ctx.globalAlpha = Math.min(1, a); ctx.fillStyle = CORAL; ctx.strokeStyle = CORAL;
+  ctx.beginPath(); ctx.ellipse(0, 0, 12, 8, 0, 0, 6.283); ctx.fill();
+  const w = Math.sin(T * 8 + c.ph) * 4;
+  ctx.lineWidth = 3; ctx.lineCap = 'round';
+  ctx.beginPath(); ctx.moveTo(-10, 0); ctx.quadraticCurveTo(-18, w, -26, w * 1.6); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(2, -6); ctx.lineTo(-4, -14); ctx.lineTo(-7, -5); ctx.closePath(); ctx.fill();
+  ctx.beginPath(); ctx.moveTo(2, 6); ctx.lineTo(-4, 14); ctx.lineTo(-7, 5); ctx.closePath(); ctx.fill();
+  ctx.fillStyle = 'rgba(7,11,23,.85)'; ctx.beginPath(); ctx.arc(9, 0, 3, 0, 6.283); ctx.fill();
+  ctx.restore();
+}
+function draw(){
+  const dM = depthOf(player.y), pal = palette(dM), wallC = rgb(pal.wall), pingC = rgb(pal.ping);
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0); ctx.globalAlpha = 1;
+  const g = ctx.createLinearGradient(0, 0, 0, ch); g.addColorStop(0, rgb(pal.bg1)); g.addColorStop(1, rgb(pal.bg2));
+  ctx.fillStyle = g; ctx.fillRect(0, 0, cw, ch);
+
+  const camY = player.y - .3 * H;
+  const sk = reduce ? 0 : shake, ox = (Math.random() - .5) * sk * 12, oy = (Math.random() - .5) * sk * 12;
+  ctx.setTransform(dpr * S, 0, 0, dpr * S, dpr * (offX + ox), dpr * oy);
+  ctx.save(); ctx.translate(0, -camY);
+  ctx.beginPath(); ctx.rect(0, camY - 40, W, H + 80); ctx.clip();
+
+  // dust
+  ctx.fillStyle = pingC;
+  for(const m of dust){
+    const sy = (((m.y - camY * m.p) % H) + H) % H;
+    ctx.globalAlpha = .13; ctx.beginPath(); ctx.arc(m.x, camY + sy, m.r, 0, 6.283); ctx.fill();
+  }
+
+  // cave cells
+  const r0 = Math.max(0, Math.floor(camY / CELL) - 1), r1 = Math.min(rows.length - 1, Math.floor((camY + H) / CELL) + 1);
+  ctx.fillStyle = wallC; ctx.strokeStyle = wallC; ctx.lineCap = 'round';
+  for(let r = r0; r <= r1; r++){
+    const row = rows[r], up = rows[r - 1], dn = rows[r + 1], y0 = r * CELL;
+    for(let c = 0; c < COLS; c++){
+      if(!row.solid[c]) continue;
+      const x0 = c * CELL, cx = x0 + CELL / 2, cy = y0 + CELL / 2;
+      let a = bright(row.lit[c], row.amp[c]);
+      const dd = Math.hypot(cx - player.x, cy - player.y);
+      if(dd < PROX){ const pa = (1 - dd / PROX) * .55; if(pa > a) a = pa; }
+      if(a < .02) continue;
+      ctx.globalAlpha = a * .12; ctx.fillRect(x0, y0, CELL, CELL);
+      ctx.beginPath(); let any = false;
+      if(c > 0 && !row.solid[c - 1]){ ctx.moveTo(x0, y0); ctx.lineTo(x0, y0 + CELL); any = true; }
+      if(c < COLS - 1 && !row.solid[c + 1]){ ctx.moveTo(x0 + CELL, y0); ctx.lineTo(x0 + CELL, y0 + CELL); any = true; }
+      if(up && !up.solid[c]){ ctx.moveTo(x0, y0); ctx.lineTo(x0 + CELL, y0); any = true; }
+      if(dn && !dn.solid[c]){ ctx.moveTo(x0, y0 + CELL); ctx.lineTo(x0 + CELL, y0 + CELL); any = true; }
+      if(any){
+        ctx.globalAlpha = a * .2; ctx.lineWidth = 6; ctx.stroke();
+        ctx.globalAlpha = Math.min(1, a); ctx.lineWidth = 2; ctx.stroke();
+      }
+      if(row.crystal[c] && a > .1){
+        ctx.globalAlpha = Math.min(1, a); ctx.fillStyle = 'rgb(240,210,255)';
+        ctx.beginPath(); ctx.moveTo(cx, cy - 7); ctx.lineTo(cx + 4, cy); ctx.lineTo(cx, cy + 7); ctx.lineTo(cx - 4, cy); ctx.closePath(); ctx.fill();
+        ctx.fillStyle = wallC;
+      }
+    }
+  }
+
+  // orbs
+  for(const o of orbs){
+    if(o.y < camY - 40 || o.y > camY + H + 40) continue;
+    const d = Math.hypot(o.x - player.x, o.y - player.y);
+    let a = .2 * (.6 + .4 * Math.sin(T * 3 + o.ph)) + Math.max(0, 1 - (T - o.lit) / FADE) * .8;
+    if(d < PROX) a = Math.max(a, (1 - d / PROX) * .9);
+    const gr = ctx.createRadialGradient(o.x, o.y, 1, o.x, o.y, 22);
+    gr.addColorStop(0, rgb(pal.ping)); gr.addColorStop(1, 'rgba(255,255,255,0)');
+    ctx.globalAlpha = Math.min(1, a) * .55; ctx.fillStyle = gr; ctx.beginPath(); ctx.arc(o.x, o.y, 22, 0, 6.283); ctx.fill();
+    ctx.globalAlpha = Math.min(1, a + .15); ctx.fillStyle = '#f2f8ff'; ctx.beginPath(); ctx.arc(o.x, o.y, 3.2, 0, 6.283); ctx.fill();
+  }
+
+  for(const c of creatures){ if(c.y > camY - 60 && c.y < camY + H + 60) drawCreature(c); }
+
+  // ping rings
+  for(const p of pings){
+    const k = 1 - p.r / (p.max + BAND); if(k <= 0) continue;
+    ctx.strokeStyle = pingC; ctx.globalAlpha = k * (p.echo ? .5 : .9); ctx.lineWidth = p.echo ? 1.5 : 2.5;
+    ctx.beginPath(); ctx.arc(p.x, p.y, p.r, 0, 6.283); ctx.stroke();
+    ctx.globalAlpha *= .3; ctx.lineWidth = 9; ctx.stroke();
+  }
+
+  // particles
+  for(const q of parts){
+    ctx.globalAlpha = clamp(q.life / q.max, 0, 1); ctx.fillStyle = rgb(q.col);
+    ctx.beginPath(); ctx.arc(q.x, q.y, 2, 0, 6.283); ctx.fill();
+  }
+
+  // player
+  if(state !== 'dead'){
+    const p = player;
+    for(let i = 0; i < trail.length; i++){
+      const t = trail[i], f = i / trail.length;
+      ctx.globalAlpha = f * .25; ctx.fillStyle = pingC; ctx.beginPath(); ctx.arc(t.x, t.y, 2 + f * 3, 0, 6.283); ctx.fill();
+    }
+    const blink = p.inv > 0 && Math.floor(T * 14) % 2 === 0;
+    const gr = ctx.createRadialGradient(p.x, p.y, 2, p.x, p.y, 38);
+    gr.addColorStop(0, 'rgba(' + pal.ping[0] + ',' + pal.ping[1] + ',' + pal.ping[2] + ',.30)');
+    gr.addColorStop(1, 'rgba(' + pal.ping[0] + ',' + pal.ping[1] + ',' + pal.ping[2] + ',0)');
+    ctx.globalAlpha = blink ? .4 : 1; ctx.fillStyle = gr; ctx.beginPath(); ctx.arc(p.x, p.y, 38, 0, 6.283); ctx.fill();
+    ctx.fillStyle = '#f2f8ff'; ctx.beginPath(); ctx.arc(p.x, p.y, 6.5, 0, 6.283); ctx.fill();
+    ctx.strokeStyle = pingC; ctx.lineWidth = 1.5; ctx.globalAlpha = blink ? .3 : .8;
+    ctx.beginPath(); ctx.arc(p.x, p.y, 9.5, 0, 6.283); ctx.stroke();
+  }
+  ctx.restore();
+
+  if(flash > 0){
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.globalAlpha = Math.min(.45, flash * 1.4); ctx.fillStyle = CORAL; ctx.fillRect(0, 0, cw, ch);
+  }
+  ctx.globalAlpha = 1;
+}
+
+/* ---------- input ---------- */
+let steerId = null, sx = 0, spx = 0, lastLx = 0, keyActive = false;
+const taps = new Map(), keys = { left:false, right:false };
+canvas.addEventListener('pointerdown', e => {
+  e.preventDefault(); audioInit();
+  if(state !== 'play') return;
+  try{ canvas.setPointerCapture(e.pointerId); }catch(_){}
+  const lx = (e.clientX - offX) / S;
+  taps.set(e.pointerId, { t:performance.now(), x:e.clientX, y:e.clientY, mv:0 });
+  if(steerId === null){ steerId = e.pointerId; sx = lx; spx = player.x; lastLx = lx; }
+});
+canvas.addEventListener('pointermove', e => {
+  const tp = taps.get(e.pointerId); if(!tp) return;
+  tp.mv = Math.max(tp.mv, Math.hypot(e.clientX - tp.x, e.clientY - tp.y));
+  if(e.pointerId === steerId && state === 'play'){
+    const lx = (e.clientX - offX) / S; lastLx = lx;
+    player.tx = clamp(spx + (lx - sx) * 1.15, 8, W - 8);
+  }
+});
+function endPointer(e){
+  const tp = taps.get(e.pointerId); taps.delete(e.pointerId);
+  if(e.pointerId === steerId) steerId = null;
+  if(tp && e.type === 'pointerup' && state === 'play' && performance.now() - tp.t < 240 && tp.mv < 14) doPing();
+}
+canvas.addEventListener('pointerup', endPointer);
+canvas.addEventListener('pointercancel', endPointer);
+canvas.addEventListener('contextmenu', e => e.preventDefault());
+
+window.addEventListener('keydown', e => {
+  audioInit();
+  if(e.code === 'ArrowLeft' || e.code === 'KeyA'){ keys.left = true; e.preventDefault(); }
+  else if(e.code === 'ArrowRight' || e.code === 'KeyD'){ keys.right = true; e.preventDefault(); }
+  else if(e.code === 'Space' || e.code === 'ArrowUp' || e.code === 'KeyW'){ if(!e.repeat) doPing(); e.preventDefault(); }
+  else if(e.code === 'Enter'){ if(state === 'menu' || (state === 'dead' && !overEl.hidden)) startGame(); }
+});
+window.addEventListener('keyup', e => {
+  if(e.code === 'ArrowLeft' || e.code === 'KeyA') keys.left = false;
+  else if(e.code === 'ArrowRight' || e.code === 'KeyD') keys.right = false;
+});
+
+function startGame(){
+  audioInit();
+  reset();
+  state = 'play';
+  menuEl.hidden = true; overEl.hidden = true; pauseEl.hidden = true; hud.hidden = false;
+  cache.d = -1; cache.e = ''; cache.h = '';
+  showBanner(0); updateHud();
+}
+$('go').addEventListener('click', startGame);
+$('again').addEventListener('click', startGame);
+$('resume').addEventListener('click', () => { audioInit(); if(state === 'paused'){ state = 'play'; pauseEl.hidden = true; last = performance.now(); } });
+[$('sndHud'), $('sndMenu')].forEach(b => b.addEventListener('click', () => { audioInit(); setSound(muted); }));
+document.addEventListener('visibilitychange', () => {
+  if(document.hidden && state === 'play'){ state = 'paused'; pauseEl.hidden = false; steerId = null; taps.clear(); }
+});
+
+/* ---------- main loop ---------- */
+let last = performance.now();
+function frame(now){
+  requestAnimationFrame(frame);
+  let dt = (now - last) / 1000; last = now;
+  if(!(dt > 0)) return;
+  if(dt > .05) dt = .05;
+  if(cw !== window.innerWidth || ch !== window.innerHeight) resize();
+  if(state === 'play') update(dt);
+  else if(state === 'menu') updateMenu(dt);
+  else if(state === 'dead') updateDead(dt);
+  draw();
+}
+
+resize();
+reset();
+$('bestMenu').textContent = best;
+requestAnimationFrame(frame);
+})();
+</script>
+
+</body></html>
